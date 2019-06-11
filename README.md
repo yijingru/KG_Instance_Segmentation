@@ -35,4 +35,4 @@ segmentation techniques.
 
 
 # Dependencies
-Ubuntu 14.04, python 3.6.4, pytorch 1.1.0, opencv-python 4.1.0.25 
+Ubuntu 14.04, Python 3.6.4, PyTorch 1.1.0, OpenCV-Python 4.1.0.25 
