@@ -30,7 +30,7 @@ demonstrate the superiority of our method compared to other instance
 segmentation techniques.
 
 <p align="center">
-	<img src="imgs/pic1.png", width="600">
+	<img src="imgs/pic1.png", width="800">
 </p>
 
 
