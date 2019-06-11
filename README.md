@@ -7,10 +7,7 @@ Jingru Yi, Pengxiang Wu, Qiaoying Huang, Hui Qu, Bo Liu, Daniel J. Hoeppner, Dim
 
 
 # Introduction
-<p align="left">
-<img src="https://github.com/yijingru/KG_Instance_Segmentation/tree/master/imgs/pic1.png" alt="Multi-scale cell instance segmentation framework" width="200px">
-</p>
-
+![GitHub Logo](/imgs/pic1.png)
 
 
 
