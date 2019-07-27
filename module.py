@@ -20,13 +20,13 @@ from collater import collater
 def parse_args():
     parser = argparse.ArgumentParser(description="InstanceHeat")
     parser.add_argument("--trainDir", help="data directory",
-                        default="/home/grace/PycharmProjects/DataSets/kaggle/train",
+                        default="/home/grace/PycharmProjects/Datasets/kaggle/train",
                         type=str)
     parser.add_argument("--testDir", help="test directory",
-                        default="/home/grace/PycharmProjects/DataSets/kaggle/test",
+                        default="/home/grace/PycharmProjects/Datasets/kaggle/test",
                         type=str)
     parser.add_argument("--valDir", help="test directory",
-                        default="/home/grace/PycharmProjects/DataSets/kaggle/val",
+                        default="/home/grace/PycharmProjects/Datasets/kaggle/val",
                         type=str)
     parser.add_argument("--resume", help="resume file",
                         default="end_model.pth",
@@ -203,7 +203,7 @@ class InstanceHeat(object):
             img = self.map_mask_to_image(kp[0,i,:,:], img, color=colors[i])
         return img
 
-    def test5(self, args):
+    def test(self, args):
         self.load_weights(resume=args.resume)
         self.model = self.model.to(self.device)
         self.model.eval()
@@ -230,7 +230,7 @@ class InstanceHeat(object):
                 pr_kp1, pr_short1, pr_mid1 = pr_c1
                 pr_kp2, pr_short2, pr_mid2 = pr_c2
                 pr_kp3, pr_short3, pr_mid3 = pr_c3
-
+            torch.cuda.synchronize()
             skeletons0 = postprocessing.get_skeletons_and_masks(pr_kp0, pr_short0, pr_mid0)
             skeletons1 = postprocessing.get_skeletons_and_masks(pr_kp1, pr_short1, pr_mid1)
             skeletons2 = postprocessing.get_skeletons_and_masks(pr_kp2, pr_short2, pr_mid2)
@@ -286,13 +286,12 @@ class InstanceHeat(object):
                     # cv2.rectangle(out_img, pt1=(int(x1), int(y1)), pt2=(int(x2), int(y2)), color=[0, 255, 0], thickness=1,
                     #               lineType=1)
                     # cv2.putText(out_img, "{:.4f}".format(conf), (int(x1),int(y1)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color=(255,0,255), thickness=1, lineType=1)
-                cv2.imwrite(os.path.join("save_result",img_id+".png"), np.uint8(out_img))
-                # cv2.imshow('img', np.uint8(img))
-                # cv2.imshow('out_img', np.uint8(out_img))
-                # k = cv2.waitKey(0)
-                # if k & 0xFF == ord('q'):
-                #     cv2.destroyAllWindows()
-                #     exit(1)
+                # cv2.imwrite(os.path.join("save_result",img_id+".png"), np.uint8(out_img))
+                cv2.imshow('out_img', np.uintf8(out_img))
+                k = cv2.waitKey(0)
+                if k & 0xFF == ord('q'):
+                    cv2.destroyAllWindows()
+                    exit(1)
 
 
     def detection_evaluation(self, args, ov_thresh=0.5, use_07_metric=True):
@@ -324,6 +323,7 @@ class InstanceHeat(object):
                 pr_kp2, pr_short2, pr_mid2 = pr_c2
                 pr_kp3, pr_short3, pr_mid3 = pr_c3
 
+            torch.cuda.synchronize()
             skeletons0 = postprocessing.get_skeletons_and_masks(pr_kp0, pr_short0, pr_mid0)
             skeletons1 = postprocessing.get_skeletons_and_masks(pr_kp1, pr_short1, pr_mid1)
             skeletons2 = postprocessing.get_skeletons_and_masks(pr_kp2, pr_short2, pr_mid2)
@@ -440,7 +440,7 @@ class InstanceHeat(object):
                 pr_kp1, pr_short1, pr_mid1 = pr_c1
                 pr_kp2, pr_short2, pr_mid2 = pr_c2
                 pr_kp3, pr_short3, pr_mid3 = pr_c3
-
+            torch.cuda.synchronize()
             skeletons0 = postprocessing.get_skeletons_and_masks(pr_kp0, pr_short0, pr_mid0)
             skeletons1 = postprocessing.get_skeletons_and_masks(pr_kp1, pr_short1, pr_mid1)
             skeletons2 = postprocessing.get_skeletons_and_masks(pr_kp2, pr_short2, pr_mid2)
@@ -549,8 +549,8 @@ class InstanceHeat(object):
 if __name__ == '__main__':
     args = parse_args()
     object_is = InstanceHeat()
-    object_is.train(args)
-    # object_is.test5(args)
+    # object_is.train(args)
+    object_is.test(args)
     # object_is.detection_evaluation(args,ov_thresh=0.5)
     # object_is.detection_evaluation(args,ov_thresh=0.7)
     # object_is.instance_segmentation_evaluation(args, ov_thresh=0.5)
