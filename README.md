@@ -21,7 +21,7 @@ demonstrate the superiority of our method compared to other instance segmentatio
 </p>
 
 <p align="center">
-	<img src="imgs/pic2.png", width="800">
+	<img src="imgs/pic2.png", width="600">
 </p>
 
 # Dependencies
