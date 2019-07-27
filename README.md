@@ -1,5 +1,5 @@
 # KG_Instance_Segmentation
-Multi-scale Cell Instance Segmentation with Keypoint Graph based Bounding Boxes  [Arxiv Link](https://arxiv.org/abs/1907.09140)
+Multi-scale Cell Instance Segmentation with Keypoint Graph based Bounding Boxes  [Arxiv PDF Link](https://arxiv.org/abs/1907.09140)
 
 Please cite the article in your publications if it helps your research:
 
