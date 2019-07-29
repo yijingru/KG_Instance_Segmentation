@@ -273,13 +273,13 @@ class InstanceHeat(object):
                 cv2.rectangle(out_img, (int(x1), int(y1)), (int(x2), int(y2)), [0, 255, 0], 1, 1)
                 cv2.putText(out_img, "{:.4f}".format(conf), (int(x1),int(y1)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,0,255), 1, 1)
-            if save_flag:
-                cv2.imwrite(os.path.join("save_result", img_id+".png"), np.uint8(out_img))
             clmsk = np.ones(mask.shape) * mask
             clmsk[:, :, 0] = clmsk[:, :, 0] * color[0] * 256
             clmsk[:, :, 1] = clmsk[:, :, 1] * color[1] * 256
             clmsk[:, :, 2] = clmsk[:, :, 2] * color[2] * 256
             out_img = out_img + 1 * clmsk - 1 * mskd
+        if save_flag:
+            cv2.imwrite(os.path.join("save_result", img_id+".png"), np.uint8(out_img))
         cv2.imshow('out_img', np.uint8(out_img))
         k = cv2.waitKey(0)
         if k & 0xFF == ord('q'):
