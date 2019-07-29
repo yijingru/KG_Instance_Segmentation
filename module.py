@@ -415,9 +415,9 @@ class InstanceHeat(object):
 if __name__ == '__main__':
     args = parse_args()
     object_is = InstanceHeat()
-    # object_is.train(args)
+    object_is.train(args)
     # object_is.test(args)
-    object_is.detection_evaluation(args,ov_thresh=0.5)
+    # object_is.detection_evaluation(args,ov_thresh=0.5)
     # object_is.detection_evaluation(args,ov_thresh=0.7)
     # object_is.instance_segmentation_evaluation(args, ov_thresh=0.5)
     # object_is.instance_segmentation_evaluation(args, ov_thresh=0.7)
