@@ -37,7 +37,7 @@ if __name__ == '__main__':
     object_is.train(args)
 ```
 
-## test the model
+## Test the model
 in module.py:
 ```ruby
 if __name__ == '__main__':
