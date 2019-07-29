@@ -29,15 +29,13 @@ Ubuntu 14.04, Python 3.6.4, PyTorch 1.1.0, OpenCV-Python 4.1.0.25
 
 # How to start
 ## Train the model
-in module.py:
 ```ruby
-python module.py --phase 'train' --data_dir xxx --epochs xxx --batch_size xxx
+python module.py --phase 'train' --data_dir img_path --epochs 100 --batch_size 2 --num_workers 2 --lr 1e-4
 ```
 
 ## Test the model
-in module.py:
 ```ruby
-python module.py --phase 'test' --resume xxx --data_dir xxx
+python module.py --phase 'test' --resume weight_path --data_dir img_path
 ```
 
 
