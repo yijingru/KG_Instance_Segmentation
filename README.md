@@ -28,5 +28,17 @@ demonstrate the superiority of our method compared to other instance segmentatio
 Ubuntu 14.04, Python 3.6.4, PyTorch 1.1.0, OpenCV-Python 4.1.0.25 
 
 # How to start
-The training, testing and evaluation functions are included in object InstanceHeat in module.py. Users could find examples in the bottom code of module.py. The keypoint graph based instance segmentation model is trained end-to-end.
+## To train the model, in module.py:
+if __name__ == '__main__':
+    args = parse_args()
+    object_is = InstanceHeat()
+    object_is.train(args)
+
+## To test the model, in module.py:
+if __name__ == '__main__':
+    args = parse_args()
+    object_is = InstanceHeat()
+    object_is.test(args)
+
+
 
