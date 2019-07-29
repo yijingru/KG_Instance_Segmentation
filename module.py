@@ -30,6 +30,7 @@ def parse_args():
     parser.add_argument("--start_epoch", help="start_epoch", default=0, type=int)
     parser.add_argument("--lr", help="learning_rate", default=0.0001, type=int)
     parser.add_argument("--data_parallel", help="data parallel", default=False, type=bool)
+    parser.add_argument("--phase", help="phase", default='test', type=str)
     args = parser.parse_args()
     return args
 
@@ -415,9 +416,12 @@ class InstanceHeat(object):
 if __name__ == '__main__':
     args = parse_args()
     object_is = InstanceHeat()
-    object_is.train(args)
-    # object_is.test(args)
-    # object_is.detection_evaluation(args,ov_thresh=0.5)
-    # object_is.detection_evaluation(args,ov_thresh=0.7)
-    # object_is.instance_segmentation_evaluation(args, ov_thresh=0.5)
-    # object_is.instance_segmentation_evaluation(args, ov_thresh=0.7)
+    if args.phase == 'train':
+        object_is.train(args)
+    elif args.phase =='test':
+        object_is.test(args)
+    elif args.phase =='evaluation':
+        object_is.detection_evaluation(args,ov_thresh=0.5)
+        object_is.detection_evaluation(args,ov_thresh=0.7)
+        object_is.instance_segmentation_evaluation(args, ov_thresh=0.5)
+        object_is.instance_segmentation_evaluation(args, ov_thresh=0.7)

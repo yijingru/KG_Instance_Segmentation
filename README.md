@@ -31,19 +31,13 @@ Ubuntu 14.04, Python 3.6.4, PyTorch 1.1.0, OpenCV-Python 4.1.0.25
 ## Train the model
 in module.py:
 ```ruby
-if __name__ == '__main__':
-    args = parse_args()
-    object_is = InstanceHeat()
-    object_is.train(args)
+python module.py --phase 'train' --data_dir xxx --epochs xxx --batch_size xxx
 ```
 
 ## Test the model
 in module.py:
 ```ruby
-if __name__ == '__main__':
-    args = parse_args()
-    object_is = InstanceHeat()
-    object_is.test(args)
+python module.py --phase 'test' --resume xxx --data_dir xxx
 ```
 
 
