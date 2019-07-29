@@ -19,7 +19,7 @@ from collater import collater
 def parse_args():
     parser = argparse.ArgumentParser(description="InstanceHeat")
     parser.add_argument("--data_dir", help="data directory",
-                        default="../../../Datasets/kaggle/",
+                        default="../Datasets/kaggle/",
                         type=str)
     parser.add_argument("--resume", help="resume file", default="end_model.pth", type=str)
     parser.add_argument('--input_h', type=int, default=512, help='input height')
@@ -328,6 +328,7 @@ class InstanceHeat(object):
             bboxes = self.test_inference(args, img, bbox_flag = True)
 
             if bboxes is None:
+                npos += len(dsets.load_annotation(index, type='bbox'))
                 continue
 
             bboxes = np.asarray(bboxes, np.float32)
@@ -415,8 +416,8 @@ if __name__ == '__main__':
     args = parse_args()
     object_is = InstanceHeat()
     # object_is.train(args)
-    object_is.test(args)
-    # object_is.detection_evaluation(args,ov_thresh=0.5)
+    # object_is.test(args)
+    object_is.detection_evaluation(args,ov_thresh=0.5)
     # object_is.detection_evaluation(args,ov_thresh=0.7)
     # object_is.instance_segmentation_evaluation(args, ov_thresh=0.5)
     # object_is.instance_segmentation_evaluation(args, ov_thresh=0.7)
