@@ -28,8 +28,11 @@ demonstrate the superiority of our method compared to other instance segmentatio
 Ubuntu 14.04, Python 3.6.4, PyTorch 1.1.0, OpenCV-Python 4.1.0.25 
 
 # How to start
-## To train the model, in module.py:
+## Train the model
+in module.py:
+
 if __name__ == '__main__':
+
     args = parse_args()
     object_is = InstanceHeat()
     object_is.train(args)
