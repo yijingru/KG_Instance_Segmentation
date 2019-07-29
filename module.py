@@ -3,10 +3,9 @@ import os
 import net
 import numpy as np
 import transforms
-from dataset import NeucleiDataset, load_gt_bboxes, load_gt_masks, mask_iou
+from dataset import Kaggle
 import argparse
 import cv2
-import glob
 from loss import DetectionLossAll
 import postprocessing
 import config as cfg
@@ -19,28 +18,18 @@ from collater import collater
 
 def parse_args():
     parser = argparse.ArgumentParser(description="InstanceHeat")
-    parser.add_argument("--trainDir", help="data directory",
-                        default="/home/grace/PycharmProjects/Datasets/kaggle/train",
+    parser.add_argument("--data_dir", help="data directory",
+                        default="../../../Datasets/kaggle/",
                         type=str)
-    parser.add_argument("--testDir", help="test directory",
-                        default="/home/grace/PycharmProjects/Datasets/kaggle/test",
-                        type=str)
-    parser.add_argument("--valDir", help="test directory",
-                        default="/home/grace/PycharmProjects/Datasets/kaggle/val",
-                        type=str)
-    parser.add_argument("--resume", help="resume file",
-                        default="end_model.pth",
-                        type=str)
-    parser.add_argument("--image_height", help="image_height", default=512, type=int)
-    parser.add_argument("--image_width", help="image_width", default=512, type=int)
-    parser.add_argument("--dataSuffix", help="data suffix", default=".png", type=str)
-    parser.add_argument("--annoSuffix", help="anno suffix", default=".png", type=str)
+    parser.add_argument("--resume", help="resume file", default="end_model.pth", type=str)
+    parser.add_argument('--input_h', type=int, default=512, help='input height')
+    parser.add_argument('--input_w', type=int, default=512, help='input width')
     parser.add_argument("--workers", help="workers number", default=4, type=int)
     parser.add_argument("--batch_size", help="batch size", default=2, type=int)
     parser.add_argument("--epochs", help="epochs", default=100, type=int)
     parser.add_argument("--start_epoch", help="start_epoch", default=0, type=int)
     parser.add_argument("--lr", help="learning_rate", default=0.0001, type=int)
-    parser.add_argument("--data_parallel", help="data parrallel", default=False, type=bool)
+    parser.add_argument("--data_parallel", help="data parallel", default=False, type=bool)
     args = parser.parse_args()
     return args
 
@@ -83,34 +72,32 @@ class InstanceHeat(object):
         self.model.train()
 
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()), lr=args.lr)
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.96, last_epoch=-1)
+        # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.96, last_epoch=-1)
 
         loss_dec = DetectionLossAll(kp_radius=cfg.KP_RADIUS)
-        loss_seg = seg_loss.SEG_loss(height=args.image_height, width=args.image_width)
+        loss_seg = seg_loss.SEG_loss(height=args.image_height, width=args.input_w)
 
-        train_data_transform = transforms.Compose([transforms.ConvertImgFloat(),
+        data_trans = {'train': transforms.Compose([transforms.ConvertImgFloat(),
                                                    transforms.PhotometricDistort(),
                                                    transforms.Expand(max_scale=2, mean=(0, 0, 0)),
                                                    transforms.RandomMirror_w(),
                                                    transforms.RandomMirror_h(),
-                                                   transforms.Resize(h=args.image_height, w=args.image_width)])
+                                                   transforms.Resize(h=args.input_h, w=args.input_w)]),
 
-        val_data_transform = transforms.Compose([transforms.ConvertImgFloat(),
-                                                 transforms.Resize(h=args.image_height, w=args.image_width)])
+                      'val': transforms.Compose([transforms.ConvertImgFloat(),
+                                                 transforms.Resize(h=args.input_h, w=args.input_w)])}
 
-        train_dsets = NeucleiDataset(dataDir=args.trainDir, annoDir=None,
-                                     dataSuffix=args.dataSuffix, annoSuffix=args.annoSuffix,
-                                     transform=train_data_transform)
+        dsets = {x: Kaggle(data_dir=args.data_dir,
+                                   phase=x,
+                                   transform=data_trans[x])
+                 for x in ['train', 'val']}
 
-        val_dsets = NeucleiDataset(dataDir=args.valDir, annoDir=None,
-                                   dataSuffix=args.dataSuffix, annoSuffix=args.annoSuffix,
-                                   transform=val_data_transform)
 
         # for i in range(100):
         #     show_ground_truth.show_input(dsets.__getitem__(i))
 
 
-        train_loader = torch.utils.data.DataLoader(train_dsets,
+        train_loader = torch.utils.data.DataLoader(dsets['train'],
                                                    batch_size=args.batch_size,
                                                    num_workers=args.workers,
                                                    pin_memory=True,
@@ -118,7 +105,7 @@ class InstanceHeat(object):
                                                    collate_fn = collater)
 
 
-        val_loader = torch.utils.data.DataLoader(val_dsets,
+        val_loader = torch.utils.data.DataLoader(dsets['val'],
                                                  batch_size=args.batch_size,
                                                  num_workers=args.workers,
                                                  pin_memory=True,
@@ -131,12 +118,12 @@ class InstanceHeat(object):
         for epoch in range(args.start_epoch, args.epochs):
             print('Epoch {}/{}'.format(epoch, args.epochs - 1))
             print('-' * 10)
-            scheduler.step()
+            # scheduler.step()
 
-            train_epoch_loss = self.training(train_loader,loss_dec,loss_seg,optimizer,epoch, train_dsets)
+            train_epoch_loss = self.training(train_loader,loss_dec,loss_seg,optimizer,epoch, dsets['train'])
             train_loss_dict.append(train_epoch_loss)
 
-            val_epoch_loss = self.validating(val_loader,loss_dec,loss_seg, epoch, val_dsets)
+            val_epoch_loss = self.validating(val_loader,loss_dec,loss_seg, epoch, dsets['val'])
             val_loss_dict.append(val_epoch_loss)
 
             np.savetxt('train_loss.txt', train_loss_dict, fmt='%.6f')
@@ -203,95 +190,123 @@ class InstanceHeat(object):
             img = self.map_mask_to_image(kp[0,i,:,:], img, color=colors[i])
         return img
 
-    def test(self, args):
+    def test_inference(self, args, image, bbox_flag=False):
+        height, width, c = image.shape
+
+        img_input = cv2.resize(image, (args.input_w, args.input_h))
+        img_input = torch.FloatTensor(np.transpose(img_input.copy(), (2, 0, 1))).unsqueeze(0) / 255 - 0.5
+        img_input = img_input.to(self.device)
+
+        with torch.no_grad():
+            begin = time.time()
+            pr_c0, pr_c1, pr_c2, pr_c3, feat_seg = self.model.forward_dec(img_input)
+            print("forward time is {:.4f}".format(time.time() - begin))
+            pr_kp0, pr_short0, pr_mid0 = pr_c0
+            pr_kp1, pr_short1, pr_mid1 = pr_c1
+            pr_kp2, pr_short2, pr_mid2 = pr_c2
+            pr_kp3, pr_short3, pr_mid3 = pr_c3
+
+        torch.cuda.synchronize()
+        skeletons0 = postprocessing.get_skeletons_and_masks(pr_kp0, pr_short0, pr_mid0)
+        skeletons1 = postprocessing.get_skeletons_and_masks(pr_kp1, pr_short1, pr_mid1)
+        skeletons2 = postprocessing.get_skeletons_and_masks(pr_kp2, pr_short2, pr_mid2)
+        skeletons3 = postprocessing.get_skeletons_and_masks(pr_kp3, pr_short3, pr_mid3)
+
+        skeletons0 = postprocessing.refine_skeleton(skeletons0)
+        skeletons1 = postprocessing.refine_skeleton(skeletons1)
+        skeletons2 = postprocessing.refine_skeleton(skeletons2)
+        skeletons3 = postprocessing.refine_skeleton(skeletons3)
+
+        bboxes = postprocessing.gather_skeleton(skeletons0, skeletons1, skeletons2, skeletons3)
+        bboxes = nms.non_maximum_suppression_numpy(bboxes, nms_thresh=0.5)
+        if bbox_flag:
+            return bboxes
+        if bboxes is None:
+            return None
+
+        with torch.no_grad():
+            predictions = self.model.forward_seg(feat_seg, [bboxes])
+        predictions = self.post_processing(args, predictions, width, height)
+        return predictions
+
+    def post_processing(self, args, predictions, image_w, image_h):
+        if predictions is None:
+            return predictions
+        out_masks = []
+        out_dets = []
+        mask_patches, mask_dets = predictions
+        for mask_b_patches, mask_b_dets in zip(mask_patches, mask_dets):
+            for mask_n_patch, mask_n_det in zip(mask_b_patches, mask_b_dets):
+                mask_patch = mask_n_patch.data.cpu().numpy()
+                mask_det = mask_n_det.data.cpu().numpy()
+                y1, x1, y2, x2, conf = mask_det
+                y1 = np.maximum(0, np.int32(np.round(y1)))
+                x1 = np.maximum(0, np.int32(np.round(x1)))
+                y2 = np.minimum(np.int32(np.round(y2)), args.input_h - 1)
+                x2 = np.minimum(np.int32(np.round(x2)), args.input_w - 1)
+
+                mask = np.zeros((args.input_h, args.input_w), dtype=np.float32)
+                mask_patch = cv2.resize(mask_patch, (x2 - x1, y2 - y1))
+
+                mask[y1:y2, x1:x2] = mask_patch
+                mask = cv2.resize(mask, (image_w, image_h))
+                mask = np.where(mask >= 0.5, 1, 0)
+
+                y1 = float(y1) / args.input_h * image_h
+                x1 = float(x1) / args.input_w * image_w
+                y2 = float(y2) / args.input_h * image_h
+                x2 = float(x2) / args.input_w * image_w
+
+                out_masks.append(mask)
+                out_dets.append([y1,x1,y2,x2, conf])
+        return [np.asarray(out_masks, np.float32), np.asarray(out_dets, np.float32)]
+
+
+
+    def imshow_instance_segmentation(self, masks, dets, out_img, img_id=None, save_flag=False, show_box=False):
+        for mask, det in zip(masks, dets):
+            color = np.random.rand(3)
+            mask = np.repeat(mask[:, :, np.newaxis], 3, axis=2)
+            mskd = out_img * mask
+            if show_box:
+                y1,x1,y2,x2,conf = det
+                cv2.rectangle(out_img, (int(x1), int(y1)), (int(x2), int(y2)), [0, 255, 0], 1, 1)
+                cv2.putText(out_img, "{:.4f}".format(conf), (int(x1),int(y1)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,0,255), 1, 1)
+            if save_flag:
+                cv2.imwrite(os.path.join("save_result", img_id+".png"), np.uint8(out_img))
+            clmsk = np.ones(mask.shape) * mask
+            clmsk[:, :, 0] = clmsk[:, :, 0] * color[0] * 256
+            clmsk[:, :, 1] = clmsk[:, :, 1] * color[1] * 256
+            clmsk[:, :, 2] = clmsk[:, :, 2] * color[2] * 256
+            out_img = out_img + 1 * clmsk - 1 * mskd
+        cv2.imshow('out_img', np.uint8(out_img))
+        k = cv2.waitKey(0)
+        if k & 0xFF == ord('q'):
+            cv2.destroyAllWindows()
+            exit(1)
+
+
+
+    def test(self, args, save_flag=False):
         self.load_weights(resume=args.resume)
         self.model = self.model.to(self.device)
         self.model.eval()
 
-        if not os.path.exists("save_result"):
+        if not os.path.exists("save_result") and save_flag is True:
             os.mkdir("save_result")
 
-        fileLists = os.listdir(args.testDir)
-        for img_id in sorted(fileLists):
-            imgDir = os.path.join(args.testDir, img_id, "images", img_id+args.dataSuffix)
-            img = cv2.imread(imgDir)
-            out_img = img.copy()
-            height, width, _ = out_img.shape
-            img = cv2.resize(img, (args.image_width, args.image_height))
-            img_input =  torch.FloatTensor(np.transpose(img.copy(), (2,0,1))).unsqueeze(0)/255 - 0.5
-            img_input = img_input.to(self.device)
+        dsets = Kaggle(data_dir=args.data_dir, phase='test')
 
-
-            with torch.no_grad():
-                begin = time.time()
-                pr_c0, pr_c1, pr_c2, pr_c3, feat_seg = self.model.forward_dec(img_input)
-                print("forward time is {:.4f}".format(time.time()-begin))
-                pr_kp0, pr_short0, pr_mid0 = pr_c0
-                pr_kp1, pr_short1, pr_mid1 = pr_c1
-                pr_kp2, pr_short2, pr_mid2 = pr_c2
-                pr_kp3, pr_short3, pr_mid3 = pr_c3
-            torch.cuda.synchronize()
-            skeletons0 = postprocessing.get_skeletons_and_masks(pr_kp0, pr_short0, pr_mid0)
-            skeletons1 = postprocessing.get_skeletons_and_masks(pr_kp1, pr_short1, pr_mid1)
-            skeletons2 = postprocessing.get_skeletons_and_masks(pr_kp2, pr_short2, pr_mid2)
-            skeletons3 = postprocessing.get_skeletons_and_masks(pr_kp3, pr_short3, pr_mid3)
-
-            skeletons0 = postprocessing.refine_skeleton(skeletons0)
-            skeletons1 = postprocessing.refine_skeleton(skeletons1)
-            skeletons2 = postprocessing.refine_skeleton(skeletons2)
-            skeletons3 = postprocessing.refine_skeleton(skeletons3)
-
-            bboxes = postprocessing.gather_skeleton(skeletons0, skeletons1, skeletons2, skeletons3)
-            bboxes = nms.non_maximum_suppression_numpy(bboxes, nms_thresh=0.5)
-
-            if bboxes is None:
+        for index in range(len(dsets)):
+            img = dsets.load_image(index)
+            predictions = self.test_inference(args, img)
+            if predictions is None:
                 continue
+            mask_patches, mask_dets = predictions
+            self.imshow_instance_segmentation(mask_patches, mask_dets, out_img=img.copy(),
+                                              img_id=dsets.img_ids[index], save_flag= False)
 
-            with torch.no_grad():
-                predictions = self.model.forward_seg(feat_seg, [bboxes])
-
-            (mask_patches, mask_dets) = predictions
-            for i_batch in range(len(mask_patches)):
-                for i_obj in range(len(mask_patches[i_batch])):
-                    mask_patch = mask_patches[i_batch][i_obj].data.cpu().numpy()
-                    mask_det = mask_dets[i_batch][i_obj].data.cpu().numpy()
-                    [y1, x1, y2, x2, conf] = mask_det
-                    y1 = np.maximum(0, np.int32(np.round(y1)))
-                    x1 = np.maximum(0, np.int32(np.round(x1)))
-                    y2 = np.minimum(np.int32(np.round(y2)), args.image_height - 1)
-                    x2 = np.minimum(np.int32(np.round(x2)), args.image_width - 1)
-
-                    mask = np.zeros((args.image_height, args.image_width), dtype=np.float32)
-                    mask_patch = cv2.resize(mask_patch, (x2 - x1, y2 - y1))
-
-                    mask[y1:y2, x1:x2] = mask_patch
-                    mask = cv2.resize(mask, (width, height))
-                    mask = np.where(mask >= 0.5, 1, 0)
-
-                    y1 = int(float(y1)/args.image_height*height)
-                    x1 = int(float(x1)/args.image_width*width)
-                    y2 = int(float(y2)/args.image_height*height)
-                    x2 = int(float(x2)/args.image_width*width)
-
-
-                    color = np.random.rand(3)
-                    mask = np.repeat(mask[:, :, np.newaxis], 3, axis=2)
-                    mskd = out_img * mask
-
-                    clmsk = np.ones(mask.shape) * mask
-                    clmsk[:, :, 0] = clmsk[:, :, 0] * color[0] * 256
-                    clmsk[:, :, 1] = clmsk[:, :, 1] * color[1] * 256
-                    clmsk[:, :, 2] = clmsk[:, :, 2] * color[2] * 256
-                    out_img = out_img + 1 * clmsk - 1 * mskd
-                    # cv2.rectangle(out_img, pt1=(int(x1), int(y1)), pt2=(int(x2), int(y2)), color=[0, 255, 0], thickness=1,
-                    #               lineType=1)
-                    # cv2.putText(out_img, "{:.4f}".format(conf), (int(x1),int(y1)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color=(255,0,255), thickness=1, lineType=1)
-                # cv2.imwrite(os.path.join("save_result",img_id+".png"), np.uint8(out_img))
-                cv2.imshow('out_img', np.uintf8(out_img))
-                k = cv2.waitKey(0)
-                if k & 0xFF == ord('q'):
-                    cv2.destroyAllWindows()
-                    exit(1)
 
 
     def detection_evaluation(self, args, ov_thresh=0.5, use_07_metric=True):
@@ -299,100 +314,35 @@ class InstanceHeat(object):
         self.model.eval()
         self.model = self.model.to(self.device)
 
+        dsets = Kaggle(data_dir=args.data_dir, phase='test')
+
         all_tp = []
         all_fp = []
         all_scores = []
         npos = 0
-        fileLists = os.listdir(args.testDir)
-        for img_id in sorted(fileLists):
-            imgDir = os.path.join(args.testDir, img_id, "images", img_id+args.dataSuffix)
-            img = cv2.imread(imgDir)
-
+        for index in range(len(dsets)):
+            print('processing {}/{} images'.format(index, len(dsets)))
+            img = dsets.load_image(index)
             height, width, c = img.shape
 
-            img_input = cv2.resize(img, (args.image_width, args.image_height))
-            img_input =  torch.FloatTensor(np.transpose(img_input.copy(), (2,0,1))).unsqueeze(0)/255 - 0.5
-            img_input = img_input.to(self.device)
-
-            with torch.no_grad():
-                begin = time.time()
-                pr_c0, pr_c1, pr_c2, pr_c3, feat_seg = self.model.forward_dec(img_input)
-                print("forward time is {:.4f}".format(time.time()-begin))
-                pr_kp0, pr_short0, pr_mid0 = pr_c0
-                pr_kp1, pr_short1, pr_mid1 = pr_c1
-                pr_kp2, pr_short2, pr_mid2 = pr_c2
-                pr_kp3, pr_short3, pr_mid3 = pr_c3
-
-            torch.cuda.synchronize()
-            skeletons0 = postprocessing.get_skeletons_and_masks(pr_kp0, pr_short0, pr_mid0)
-            skeletons1 = postprocessing.get_skeletons_and_masks(pr_kp1, pr_short1, pr_mid1)
-            skeletons2 = postprocessing.get_skeletons_and_masks(pr_kp2, pr_short2, pr_mid2)
-            skeletons3 = postprocessing.get_skeletons_and_masks(pr_kp3, pr_short3, pr_mid3)
-
-            skeletons0 = postprocessing.refine_skeleton(skeletons0)
-            skeletons1 = postprocessing.refine_skeleton(skeletons1)
-            skeletons2 = postprocessing.refine_skeleton(skeletons2)
-            skeletons3 = postprocessing.refine_skeleton(skeletons3)
-
-            bboxes = postprocessing.gather_skeleton(skeletons0, skeletons1, skeletons2, skeletons3)
-            bboxes = nms.non_maximum_suppression_numpy(bboxes, nms_thresh=0.5)
+            bboxes = self.test_inference(args, img, bbox_flag = True)
 
             if bboxes is None:
                 continue
 
             bboxes = np.asarray(bboxes, np.float32)
 
-            bboxes[:,0]= bboxes[:,0]/args.image_height*height
-            bboxes[:,1]= bboxes[:,1]/args.image_width*width
-            bboxes[:,2]= bboxes[:,2]/args.image_height*height
-            bboxes[:,3]= bboxes[:,3]/args.image_width*width
+            bboxes[:, 0] = bboxes[:, 0] / args.input_h * height
+            bboxes[:, 1] = bboxes[:, 1] / args.input_w * width
+            bboxes[:, 2] = bboxes[:, 2] / args.input_h * height
+            bboxes[:, 3] = bboxes[:, 3] / args.input_w * width
 
-
-            pr_conf = bboxes[:, 4]
-            pr_bboxes = bboxes[:, :4]
-            sorted_ind = np.argsort(-pr_conf)
-            pr_bboxes = pr_bboxes[sorted_ind, :]
-            pr_conf = pr_conf[sorted_ind]
-            all_scores.extend(pr_conf)
-
-            # Step2: initialization of evaluations
-            nd = pr_bboxes.shape[0]
-            tp = np.zeros(nd)
-            fp = np.zeros(nd)
-
-            BBGT_box = load_gt_bboxes(os.path.join(args.testDir, img_id, "masks"), args.annoSuffix)
-            nd_gt = BBGT_box.shape[0]
-            det_flag = [False] * nd_gt
-            npos = npos + nd_gt
-
-            for d in range(nd):
-                bb = pr_bboxes[d, :].astype(float)
-                ovmax = -np.inf
-                BBGT = BBGT_box.astype(float)
-                jmax = -1
-                if BBGT.shape[0]>0:
-                    iymin = np.maximum(BBGT[:, 0], bb[0])
-                    ixmin = np.maximum(BBGT[:, 1], bb[1])
-                    iymax = np.minimum(BBGT[:, 2], bb[2])
-                    ixmax = np.minimum(BBGT[:, 3], bb[3])
-                    iw = np.maximum(ixmax - ixmin, 0.)
-                    ih = np.maximum(iymax - iymin, 0.)
-                    inters = iw * ih
-                    union = ((bb[2] - bb[0]) * (bb[3] - bb[1]) +
-                             (BBGT[:, 2] - BBGT[:, 0]) *
-                             (BBGT[:, 3] - BBGT[:, 1]) - inters)
-                    overlaps = inters / union
-                    ovmax = np.max(overlaps)
-                    jmax = np.argmax(overlaps)
-
-                if ovmax > ov_thresh:
-                    if not det_flag[jmax]:
-                        tp[d] = 1.
-                        det_flag[jmax] = 1
-                    else:
-                        fp[d] = 1.
-                else:
-                    fp[d] = 1.
+            fp, tp, all_scores, npos = evaluation.bbox_evaluation(index=index,
+                                                                  dsets=dsets,
+                                                                  BB_bboxes=bboxes,
+                                                                  all_scores=all_scores,
+                                                                  npos=npos,
+                                                                  ov_thresh=ov_thresh)
             all_fp.extend(fp)
             all_tp.extend(tp)
         # step5: compute precision recall
@@ -417,118 +367,33 @@ class InstanceHeat(object):
         self.model.eval()
         self.model = self.model.to(self.device)
 
+        dsets = Kaggle(data_dir=args.data_dir, phase='test')
+
         all_tp = []
         all_fp = []
         all_scores = []
         temp_overlaps = []
         npos = 0
-
-        fileLists = os.listdir(args.testDir)
-        for img_id in sorted(fileLists):
-            imgDir = os.path.join(args.testDir, img_id, "images", img_id+args.dataSuffix)
-            img = cv2.imread(imgDir)
-            height,width,_ = img.shape
-            img_input = cv2.resize(img, (args.image_width, args.image_height))
-            img_input =  torch.FloatTensor(np.transpose(img_input.copy(), (2,0,1))).unsqueeze(0)/255 - 0.5
-            img_input = img_input.to(self.device)
-
-            with torch.no_grad():
-                # begin = time.time()
-                pr_c0, pr_c1, pr_c2, pr_c3, feat_seg = self.model.forward_dec(img_input)
-                #print("forward time is {:.4f}".format(time.time()-begin))
-                pr_kp0, pr_short0, pr_mid0 = pr_c0
-                pr_kp1, pr_short1, pr_mid1 = pr_c1
-                pr_kp2, pr_short2, pr_mid2 = pr_c2
-                pr_kp3, pr_short3, pr_mid3 = pr_c3
-            torch.cuda.synchronize()
-            skeletons0 = postprocessing.get_skeletons_and_masks(pr_kp0, pr_short0, pr_mid0)
-            skeletons1 = postprocessing.get_skeletons_and_masks(pr_kp1, pr_short1, pr_mid1)
-            skeletons2 = postprocessing.get_skeletons_and_masks(pr_kp2, pr_short2, pr_mid2)
-            skeletons3 = postprocessing.get_skeletons_and_masks(pr_kp3, pr_short3, pr_mid3)
-
-            skeletons0 = postprocessing.refine_skeleton(skeletons0)
-            skeletons1 = postprocessing.refine_skeleton(skeletons1)
-            skeletons2 = postprocessing.refine_skeleton(skeletons2)
-            skeletons3 = postprocessing.refine_skeleton(skeletons3)
-
-            bboxes = postprocessing.gather_skeleton(skeletons0, skeletons1, skeletons2, skeletons3)
-            bboxes = nms.non_maximum_suppression_numpy(bboxes, nms_thresh=0.5)
-
-            if bboxes is None:
-                img_id = imgDir.split('/')[-1].split('.')[0]
-                BBGT_mask = load_gt_masks(os.path.join(args.testDir, img_id, "masks"), args.annoSuffix)
-                nd_gt = BBGT_mask.shape[0]
-                npos = npos + nd_gt
+        for index in range(len(dsets)):
+            print('processing {}/{} images'.format(index, len(dsets)))
+            img = dsets.load_image(index)
+            predictions = self.test_inference(args, img)
+            if predictions is None:
+                npos += len(dsets.load_annotation(index, type='bbox'))
                 continue
+            pr_masks, pr_dets = predictions
 
+            fp, tp, all_scores, npos, temp_overlaps = evaluation.seg_evaluation(index=index,
+                                                                            dsets=dsets,
+                                                                            BB_masks=pr_masks,
+                                                                            BB_dets=pr_dets,
+                                                                            all_scores=all_scores,
+                                                                            npos=npos,
+                                                                            temp_overlaps=temp_overlaps,
+                                                                            ov_thresh=ov_thresh)
 
-            with torch.no_grad():
-                predictions = self.model.forward_seg(feat_seg, [bboxes])
-            (mask_patches, mask_dets) = predictions
-
-            # for batches
-            for b_mask_patches, b_mask_dets in zip(mask_patches, mask_dets):
-                nd = len(b_mask_dets)
-                BB_conf = []
-                BB_mask = []
-                for d in range(nd):
-                    d_mask_det = b_mask_dets[d].data.cpu().numpy()
-                    d_mask_patch = b_mask_patches[d].data.cpu().numpy()
-                    [y1, x1, y2, x2, conf] = d_mask_det
-                    y1 = np.maximum(0, np.int32(np.round(y1)))
-                    x1 = np.maximum(0, np.int32(np.round(x1)))
-                    y2 = np.minimum(np.int32(np.round(y2)), args.image_height - 1)
-                    x2 = np.minimum(np.int32(np.round(x2)), args.image_width - 1)
-                    mask = np.zeros((args.image_height, args.image_width), dtype=np.float32)
-                    mask_patch = cv2.resize(d_mask_patch, (x2 - x1, y2 - y1))
-                    mask[y1:y2, x1:x2] = mask_patch
-                    mask = cv2.resize(mask, (width, height))
-                    mask = np.where(mask >= 0.5, 1, 0)
-
-                    BB_conf.append(conf)
-                    BB_mask.append(mask)
-
-                BB_conf = np.asarray(BB_conf, dtype=np.float32)
-                BB_mask = np.asarray(BB_mask, dtype=np.float32)
-                # Step2: sort detections according to the confidences
-                sorted_ind = np.argsort(-BB_conf)
-                BB_mask = BB_mask[sorted_ind, :, :]
-                BB_conf = BB_conf[sorted_ind]
-                all_scores.extend(BB_conf)
-
-                # Step2: intialzation of evaluations
-                nd = BB_mask.shape[0]
-                tp = np.zeros(nd)
-                fp = np.zeros(nd)
-
-                img_id = imgDir.split('/')[-1].split('.')[0]
-                BBGT_mask = load_gt_masks(os.path.join(args.testDir, img_id, "masks"), args.annoSuffix)
-                nd_gt = BBGT_mask.shape[0]
-                det_flag = [False] * nd_gt
-                npos = npos + nd_gt
-
-                for d in range(nd):
-                    d_BB_mask = BB_mask[d, :, :]
-                    ovmax = -np.inf
-                    jmax = -1
-                    for ind2 in range(len(BBGT_mask)):
-                        gt_mask = BBGT_mask[ind2]
-                        overlaps = mask_iou(d_BB_mask, gt_mask)
-                        if overlaps > ovmax:
-                            ovmax = overlaps
-                            jmax = ind2
-
-                    if ovmax > ov_thresh:
-                        if not det_flag[jmax]:
-                            tp[d] = 1.
-                            det_flag[jmax] = 1
-                            temp_overlaps.append(ovmax)
-                        else:
-                            fp[d] = 1.
-                    else:
-                        fp[d] = 1.
-                all_fp.extend(fp)
-                all_tp.extend(tp)
+            all_fp.extend(fp)
+            all_tp.extend(tp)
         # step5: compute precision recall
         all_fp = np.asarray(all_fp)
         all_tp = np.asarray(all_tp)

@@ -107,7 +107,7 @@ class CombinationModule(nn.Module):
                                        nn.ReLU(inplace=True))
 
     def forward(self, inputs1, inputs2):
-        outputs2 = self.up(F.interpolate(inputs2,inputs1.shape[2:],mode='bilinear'))
+        outputs2 = self.up(F.interpolate(inputs2,inputs1.shape[2:],mode='bilinear', align_corners=False))
         return self.cat_conv(torch.cat((inputs1, outputs2), 1))
 
 
@@ -267,80 +267,9 @@ class ResNet(nn.Module):
         return pre
 
     def forward(self, x, bboxes):
-        c0 = self.c0_conv(x)  # c0: [2, 64, 512, 640]  [0, 257]
-
-        x = self.conv1(x)
-        x = self.bn1(x)
-        c1 = self.relu(x)  # c1: [2, 64, 256, 320]  [0, 9.6]
-
-        x = self.maxpool(c1)
-
-        c2 = self.layer1(x)  # c2: [2, 256, 128, 160]   [0, 6]
-        c3 = self.layer2(c2) # c3: [2, 512, 64, 80]     [0, 8]
-        c4 = self.layer3(c3) # c4: [2, 1024, 32, 40]    [0, 3.4]
-
-        c4_upsample = self.c4_up_conv(F.interpolate(c4, c3.size()[2:], mode='bilinear'))     # c4_upsample: [2, 512, 64, 80]  [0, 1,8]
-        c3_cat = self.c3_cat_refine(torch.cat((c4_upsample, c3), 1))
-
-        c3_upsample = self.c3_up_conv(F.interpolate(c3_cat, c2.size()[2:], mode='bilinear')) # c3_upsample: [2, 256, 128, 160]  [0, 4.92]
-        c2_cat = self.c2_cat_refine(torch.cat((c3_upsample, c2), 1))
-
-        c2_upsample = self.c2_up_conv(F.interpolate(c2_cat, c1.size()[2:], mode='bilinear')) # c2_upsample: [2, 64, 256, 320] [0, 13.4]
-        c1_cat = self.c1_cat_refine(torch.cat((c2_upsample, c1), 1))
-
-        c1_upsample = self.c1_up_conv(F.interpolate(c1_cat, c0.size()[2:], mode='bilinear')) # c1_upsample: [2, 64, 512, 640] [0, 13,3]
-        c0_cat = self.c0_cat_refine(torch.cat((c1_upsample, c0), 1))
-
-        kp0 = torch.sigmoid(self.kp_head_c0(c0_cat))  # kp1: [2, 5, 512, 640]
-        short0 = self.short_offset_head_c0(c0_cat)    # short1: [2, 10, 512, 640])
-        mid0 = self.mid_offset_head_c0(c0_cat)        # mid1: [2, 40, 512, 640]
-
-
-        kp1 = torch.sigmoid(self.kp_head_c1(c1_cat))  # kp1: [2, 5, 256, 320]
-        short1 = self.short_offset_head_c1(c1_cat)    # short1: [2, 10, 256, 320])
-        mid1 = self.mid_offset_head_c1(c1_cat)        # mid1: [2, 40, 256, 320]
-
-        kp2 = torch.sigmoid(self.kp_head_c2(c2_cat))  # kp2: [2, 5, 128, 160]
-        short2 = self.short_offset_head_c2(c2_cat)
-        mid2 = self.mid_offset_head_c2(c2_cat)
-
-
-        kp3 = torch.sigmoid(self.kp_head_c3(c3_cat))   # kp3: [2, 5, 64, 80]
-        short3 = self.short_offset_head_c3(c3_cat)
-        mid3 = self.mid_offset_head_c3(c3_cat)
-
-        feat_seg = [c0,c1,c2,c3,c4]
-        mask_patches = [[] for i in range(len(bboxes))]
-        mask_dets = [[] for i in range(len(bboxes))]
-
-        # iterate batch
-        for i in range(len(bboxes)):
-            if len(bboxes[i])==0:
-                continue
-            for box, score in zip(bboxes[i][:, :4], bboxes[i][:, 4]):
-                i_x = []
-                y1, x1, y2, x2 = np.asarray(box,np.float32)
-                h,w = feat_seg[0].shape[2:]
-                for i_feat in feat_seg:
-                    x = self.get_patches(box=[y1/float(h), x1/float(w),
-                                              y2/float(h), x2/float(w)],
-                                         feat=i_feat[i,:,:,:])
-                    if x is not None:
-                        i_x.append(x)
-                    else:
-                        break
-                if len(i_x) == 0:
-                    continue
-                x = self.mask_forward(i_x)
-                x = self.seg_head(x)
-                x = torch.sigmoid(x)  # ranges from 0.5-1
-                x = torch.squeeze(x, dim=0)
-                x = torch.squeeze(x, dim=0)
-                mask_patches[i].append(x)
-                mask_dets[i].append(torch.Tensor(np.append(box,score)))
-        output = (mask_patches, mask_dets)
-
-        return (kp0,short0,mid0), (kp1,short1,mid1), (kp2,short2,mid2), (kp3,short3,mid3), output
+        dec0, dec1, dec2, dec3, feat_seg = self.forward_dec(x)
+        seg = self.forward_seg(feat_seg, bboxes)
+        return dec0, dec1, dec2, dec3, seg
 
 
     def forward_dec(self, x):
@@ -356,16 +285,16 @@ class ResNet(nn.Module):
         c3 = self.layer2(c2) # c3: [2, 512, 64, 80]     [0, 8]
         c4 = self.layer3(c3) # c4: [2, 1024, 32, 40]    [0, 3.4]
 
-        c4_upsample = self.c4_up_conv(F.interpolate(c4, c3.size()[2:], mode='bilinear'))     # c4_upsample: [2, 512, 64, 80]  [0, 1,8]
+        c4_upsample = self.c4_up_conv(F.interpolate(c4, c3.size()[2:], mode='bilinear', align_corners=False))     # c4_upsample: [2, 512, 64, 80]  [0, 1,8]
         c3_cat = self.c3_cat_refine(torch.cat((c4_upsample, c3), 1))
 
-        c3_upsample = self.c3_up_conv(F.interpolate(c3_cat, c2.size()[2:], mode='bilinear')) # c3_upsample: [2, 256, 128, 160]  [0, 4.92]
+        c3_upsample = self.c3_up_conv(F.interpolate(c3_cat, c2.size()[2:], mode='bilinear', align_corners=False)) # c3_upsample: [2, 256, 128, 160]  [0, 4.92]
         c2_cat = self.c2_cat_refine(torch.cat((c3_upsample, c2), 1))
 
-        c2_upsample = self.c2_up_conv(F.interpolate(c2_cat, c1.size()[2:], mode='bilinear')) # c2_upsample: [2, 64, 256, 320] [0, 13.4]
+        c2_upsample = self.c2_up_conv(F.interpolate(c2_cat, c1.size()[2:], mode='bilinear', align_corners=False)) # c2_upsample: [2, 64, 256, 320] [0, 13.4]
         c1_cat = self.c1_cat_refine(torch.cat((c2_upsample, c1), 1))
 
-        c1_upsample = self.c1_up_conv(F.interpolate(c1_cat, c0.size()[2:], mode='bilinear')) # c1_upsample: [2, 64, 512, 640] [0, 13,3]
+        c1_upsample = self.c1_up_conv(F.interpolate(c1_cat, c0.size()[2:], mode='bilinear', align_corners=False)) # c1_upsample: [2, 64, 512, 640] [0, 13,3]
         c0_cat = self.c0_cat_refine(torch.cat((c1_upsample, c0), 1))
 
         kp0 = torch.sigmoid(self.kp_head_c0(c0_cat))  # kp1: [2, 5, 512, 640]
@@ -386,7 +315,7 @@ class ResNet(nn.Module):
         short3 = self.short_offset_head_c3(c3_cat)
         mid3 = self.mid_offset_head_c3(c3_cat)
 
-        return (kp0,short0,mid0), (kp1,short1,mid1), (kp2,short2,mid2), (kp3,short3,mid3), [c0,c1,c2,c3,c4]
+        return [kp0,short0,mid0], [kp1,short1,mid1], [kp2,short2,mid2], [kp3,short3,mid3], [c0,c1,c2,c3,c4]
 
 
     def forward_seg(self, feat_seg, bboxes):
@@ -418,7 +347,7 @@ class ResNet(nn.Module):
                 x = torch.squeeze(x, dim=0)
                 mask_patches[i].append(x)
                 mask_dets[i].append(torch.Tensor(np.append(box,score)))
-        return (mask_patches, mask_dets)
+        return [mask_patches, mask_dets]
 
 
 def resnet18(pretrained=False, **kwargs):
