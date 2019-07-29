@@ -32,12 +32,13 @@ Ubuntu 14.04, Python 3.6.4, PyTorch 1.1.0, OpenCV-Python 4.1.0.25
 in module.py:
 
 if __name__ == '__main__':
-
     args = parse_args()
     object_is = InstanceHeat()
     object_is.train(args)
 
-## To test the model, in module.py:
+## test the model
+in module.py:
+
 if __name__ == '__main__':
     args = parse_args()
     object_is = InstanceHeat()
