@@ -96,7 +96,6 @@ def bbox_evaluation(index, dsets, BB_bboxes, all_scores, npos, ov_thresh):
 
 
 def seg_evaluation(index, dsets, BB_masks, BB_dets, all_scores, npos, temp_overlaps, ov_thresh):
-    nd = len(BB_masks)
     BB_bboxes = BB_dets[:,:4]
     BB_conf = BB_dets[:,4]
     BB_mask = BB_masks
