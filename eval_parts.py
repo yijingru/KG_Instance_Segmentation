@@ -9,8 +9,6 @@ def mask_iou(mask1, mask2):
     return float(inter) / float(union)
 
 
-
-
 def voc_ap(rec, prec, use_07_metric=True):
     """ ap = voc_ap(rec, prec, [use_07_metric])
     Compute VOC AP given precision and recall.
@@ -82,7 +80,7 @@ def bbox_evaluation(index, dsets, BB_bboxes, all_scores, npos, ov_thresh):
             ovmax = np.max(overlaps)
             jmax = np.argmax(overlaps)
 
-        if ovmax > ov_thresh:
+        if ovmax >= ov_thresh:
             if not det_flag[jmax]:
                 tp[d] = 1.
                 det_flag[jmax] = 1
@@ -140,7 +138,7 @@ def seg_evaluation(index, dsets, BB_masks, BB_dets, all_scores, npos, temp_overl
                     ovmax = overlaps
                     jmax = ind2
 
-        if ovmax > ov_thresh:
+        if ovmax >= ov_thresh:
             if not det_flag[jmax]:
                 tp[d] = 1.
                 det_flag[jmax] = 1

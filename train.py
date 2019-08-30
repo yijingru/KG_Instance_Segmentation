@@ -1,15 +1,17 @@
 import torch
 import os
-import net
+import KGnet
 import numpy as np
 import transforms
-from dataset import Kaggle
 import argparse
 import cv2
 from loss import DetectionLossAll
 import config as cfg
 import seg_loss
 from collater import collater
+from dataset_kaggle import Kaggle
+from dataset_plant import Plant
+from dataset_neural import Neural
 
 def parse_args():
     parser = argparse.ArgumentParser(description="InstanceHeat")
@@ -22,6 +24,7 @@ def parse_args():
     parser.add_argument("--start_epoch", help="start_epoch", default=0, type=int)
     parser.add_argument("--lr", help="learning_rate", default=0.0001, type=int)
     parser.add_argument("--data_parallel", help="data parallel", default=False, type=bool)
+    parser.add_argument("--dataset", help="training dataset", default='kaggle', type=str)
     args = parser.parse_args()
     return args
 
@@ -29,8 +32,9 @@ def parse_args():
 
 class InstanceHeat(object):
     def __init__(self):
-        self.model = net.resnet50(pretrained=True)
+        self.model = KGnet.resnet50(pretrained=True)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.dataset = {'kaggle': Kaggle, 'plant': Plant, 'neural': Neural}
 
     def data_parallel(self):
         self.model = torch.nn.DataParallel(self.model)
@@ -56,8 +60,9 @@ class InstanceHeat(object):
         return heatmap
 
     def train(self, args):
-        if not os.path.exists("weights"):
-            os.mkdir("weights")
+        weights_path = os.path.join("weights_"+args.dataset)
+        if not os.path.exists(weights_path):
+            os.mkdir(weights_path)
 
         self.model = self.model.to(self.device)
 
@@ -79,11 +84,11 @@ class InstanceHeat(object):
                       'val': transforms.Compose([transforms.ConvertImgFloat(),
                                                  transforms.Resize(h=args.input_h, w=args.input_w)])}
 
-        dsets = {x: Kaggle(data_dir=args.data_dir,
+        dataset_module = self.dataset[args.dataset]
+        dsets = {x: dataset_module(data_dir=args.data_dir,
                                    phase=x,
                                    transform=data_trans[x])
                  for x in ['train', 'val']}
-
 
         # for i in range(100):
         #     show_ground_truth.show_input(dsets.__getitem__(i))
@@ -94,7 +99,7 @@ class InstanceHeat(object):
                                                    num_workers=args.workers,
                                                    pin_memory=True,
                                                    shuffle=True,
-                                                   collate_fn = collater)
+                                                   collate_fn=collater)
 
 
         val_loader = torch.utils.data.DataLoader(dsets['val'],
@@ -102,7 +107,7 @@ class InstanceHeat(object):
                                                  num_workers=args.workers,
                                                  pin_memory=True,
                                                  shuffle=False,
-                                                 collate_fn = collater)
+                                                 collate_fn=collater)
 
 
         train_loss_dict = []
@@ -118,12 +123,12 @@ class InstanceHeat(object):
             val_epoch_loss = self.validating(val_loader,loss_dec,loss_seg, epoch, dsets['val'])
             val_loss_dict.append(val_epoch_loss)
 
-            np.savetxt('train_loss.txt', train_loss_dict, fmt='%.6f')
-            np.savetxt('val_loss.txt', val_loss_dict, fmt='%.6f')
+            np.savetxt('train_loss_{}.txt'.format(args.dataset), train_loss_dict, fmt='%.6f')
+            np.savetxt('train_loss_{}.txt'.format(args.dataset), val_loss_dict, fmt='%.6f')
 
             if epoch % 5 == 0 and epoch >0:
-                torch.save(self.model.state_dict(), os.path.join('weights', '{:d}_{:.4f}_model.pth'.format(epoch, train_epoch_loss)))
-            torch.save(self.model.state_dict(), os.path.join('weights', args.resume))
+                torch.save(self.model.state_dict(), os.path.join(weights_path, '{:d}_{:.4f}_model.pth'.format(epoch, train_epoch_loss)))
+            torch.save(self.model.state_dict(), os.path.join(weights_path, 'end_model.pth'))
 
     def training(self, train_loader, loss_dec, loss_seg, optimizer, epoch, dsets):
         self.model.train()

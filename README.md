@@ -30,13 +30,17 @@ Ubuntu 14.04, Python 3.6.4, PyTorch 1.1.0, OpenCV-Python 4.1.0.25
 # How to start
 ## Train the model
 ```ruby
-python train.py --data_dir dataPath --epochs 100 --batch_size 2 --num_workers 2 --lr 1e-4
+python train.py --data_dir dataPath --epochs 100 --batch_size 2 --dataset kaggle
 ```
 
 ## Test the model
 ```ruby
-python test.py --resume weightPath --data_dir dataPath --save_img False
+python test.py --resume weightPath --data_dir dataPath --save_img False --dataset kaggle
 ```
 
 
+## Evaluate the model
+```ruby
+python eval.py --resume weightPath --data_dir dataPath --save_img False --dataset kaggle --eval_type seg
+```
 

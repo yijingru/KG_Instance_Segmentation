@@ -5,68 +5,29 @@ import cv2
 import torch
 import preprocessing
 import config as cfg
-import glob
 
-
-
-class Kaggle(Dataset):
+class BaseDataset(Dataset):
     def __init__(self, data_dir, phase, transform=None):
-        super(Kaggle, self).__init__()
+        super(BaseDataset, self).__init__()
         self.data_dir = data_dir
         self.transform = transform
         self.img_dir = os.path.join(data_dir, phase)
         self.img_ids = sorted(os.listdir(self.img_dir))
-        self.class_name = ['__background__', 'cell']
-        self.num_classes = len(self.class_name)-1
 
     def load_image(self, index):
-        img_id = self.img_ids[index]
-        imgFile = os.path.join(self.img_dir, img_id, "images", img_id+'.png')
-        img = cv2.imread(imgFile)
-        return img
+        return ""
 
-    def load_gt_masks(self, annopath, suffix):
-        masks = []
-        for annoImg in sorted(glob.glob(os.path.join(annopath, "*" + suffix))):
-            mask = cv2.imread(annoImg, -1)
-            r, c = np.where(mask > 0)
-            if len(r):
-                y1 = np.min(r)
-                x1 = np.min(c)
-                y2 = np.max(r)
-                x2 = np.max(c)
-                if (abs(y2 - y1) <= 1 or abs(x2 - x1) <= 1):
-                    continue
-                masks.append(np.where(mask > 0, 1., 0.))
-        return np.asarray(masks, np.float32)
+    def load_gt_masks(self, annopath):
+        return ""
 
+    def load_gt_bboxes(self, annopath):
+        return ""
 
-    def load_gt_bboxes(self, annopath, suffix):
-        bboxes = []
-        for annoImg in sorted(glob.glob(os.path.join(annopath, "*" + suffix))):
-            mask = cv2.imread(annoImg, -1)
-            r, c = np.where(mask > 0)
-            if len(r):
-                y1 = np.min(r)
-                x1 = np.min(c)
-                y2 = np.max(r)
-                x2 = np.max(c)
-                if (abs(y2 - y1) <= 1 or abs(x2 - x1) <= 1):
-                    continue
-                bboxes.append([y1, x1, y2, x2])
-        return np.asarray(bboxes, np.float32)
-
-    def load_annoFolder(self, index):
-        img_id = self.img_ids[index]
-        return os.path.join(self.img_dir, img_id, "masks")
+    def load_annoFolder(self, img_id):
+        return ""
 
     def load_annotation(self, index, type='mask'):
-        annoFolder = self.load_annoFolder(index)
-        if type=='mask':
-            return self.load_gt_masks(annoFolder, '.png')
-        else:
-            return self.load_gt_bboxes(annoFolder, 'png')
-
+        return ""
 
     def transfer_bboxes(self, bboxes_c0):
         out_box = []

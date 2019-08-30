@@ -1,35 +1,41 @@
 import torch
-import net
+import KGnet
 import numpy as np
-from dataset import Kaggle
+from dataset_kaggle import Kaggle
+from dataset_plant import Plant
+from dataset_neural import Neural
 import argparse
 import cv2
 import postprocessing
 import time
 import nms
-import evaluation
+import eval_parts
+import os
 
 def parse_args():
     parser = argparse.ArgumentParser(description="InstanceHeat")
-    parser.add_argument("--data_dir", help="data directory", default="../../../Datasets/kaggle/", type=str)
+    parser.add_argument("--data_dir", help="data directory", default="../../../../Datasets/root/", type=str)
     parser.add_argument("--resume", help="resume file", default="end_model.pth", type=str)
     parser.add_argument('--input_h', type=int, default=512, help='input height')
     parser.add_argument('--input_w', type=int, default=512, help='input width')
     parser.add_argument('--nms_thresh', type=float, default=0.5, help='nms_thresh')
     parser.add_argument('--seg_thresh', type=float, default=0.5, help='seg_thresh')
+    parser.add_argument('--eval_type', type=str, default='dec', help='seg or dec')
+    parser.add_argument("--dataset", help="training dataset", default='neural', type=str)
     args = parser.parse_args()
     return args
 
 class InstanceHeat(object):
     def __init__(self):
-        self.model = net.resnet50(pretrained=True)
+        self.model = KGnet.resnet50(pretrained=True)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.dataset = {'kaggle': Kaggle, 'plant': Plant, 'neural': Neural}
 
     def data_parallel(self):
         self.model = torch.nn.DataParallel(self.model)
 
-    def load_weights(self, resume):
-        self.model.load_state_dict(torch.load(resume))
+    def load_weights(self, resume, dataset):
+        self.model.load_state_dict(torch.load(os.path.join('weights_'+dataset, resume)))
 
     def map_mask_to_image(self, mask, img, color):
         # color = np.random.rand(3)
@@ -84,6 +90,7 @@ class InstanceHeat(object):
 
         with torch.no_grad():
             predictions = self.model.forward_seg(feat_seg, [bboxes])
+        torch.cuda.synchronize()
         predictions = self.post_processing(args, predictions, width, height)
         return predictions
 
@@ -120,12 +127,13 @@ class InstanceHeat(object):
         return [np.asarray(out_masks, np.float32), np.asarray(out_dets, np.float32)]
 
 
-    def instance_segmentation_evaluation(self, args, ov_thresh=0.5, use_07_metric=True):
-        self.load_weights(resume=args.resume)
+    def instance_segmentation_evaluation(self, args, ov_thresh=0.5, use_07_metric=False):
+        self.load_weights(resume=args.resume, dataset=args.dataset)
         self.model.eval()
         self.model = self.model.to(self.device)
 
-        dsets = Kaggle(data_dir=args.data_dir, phase='test')
+        dataset_module = self.dataset[args.dataset]
+        dsets = dataset_module(data_dir=args.data_dir, phase='test')
 
         all_tp = []
         all_fp = []
@@ -141,7 +149,7 @@ class InstanceHeat(object):
                 continue
             pr_masks, pr_dets = predictions
 
-            fp, tp, all_scores, npos, temp_overlaps = evaluation.seg_evaluation(index=index,
+            fp, tp, all_scores, npos, temp_overlaps = eval_parts.seg_evaluation(index=index,
                                                                             dsets=dsets,
                                                                             BB_masks=pr_masks,
                                                                             BB_dets=pr_dets,
@@ -165,12 +173,95 @@ class InstanceHeat(object):
         # avoid divide by zero in case the first detection matches a difficult
         # ground truth
         prec = all_tp / np.maximum(all_tp + all_fp, np.finfo(np.float64).eps)
-        ap = evaluation.voc_ap(rec, prec, use_07_metric=use_07_metric)
+        ap = eval_parts.voc_ap(rec, prec, use_07_metric=use_07_metric)
         print("ap@{} is {}".format(ov_thresh, ap))
         print("temp overlaps = {}".format(np.mean(temp_overlaps)))
+        return ap, np.mean(temp_overlaps)
+
+    def detection_evaluation(self, args, ov_thresh=0.5, use_07_metric=False):
+        self.load_weights(resume=args.resume, dataset=args.dataset)
+        self.model.eval()
+        self.model = self.model.to(self.device)
+
+        dataset_module = self.dataset[args.dataset]
+        dsets = dataset_module(data_dir=args.data_dir, phase='test')
+
+        all_tp = []
+        all_fp = []
+        all_scores = []
+        npos = 0
+        for index in range(len(dsets)):
+            print('processing {}/{} images'.format(index, len(dsets)))
+            img = dsets.load_image(index)
+            height, width, c = img.shape
+
+            bboxes = self.test_inference(args, img, bbox_flag = True)
+
+            if bboxes is None:
+                npos += len(dsets.load_annotation(index, type='bbox'))
+                continue
+
+            bboxes = np.asarray(bboxes, np.float32)
+
+            bboxes[:, 0] = bboxes[:, 0] / args.input_h * height
+            bboxes[:, 1] = bboxes[:, 1] / args.input_w * width
+            bboxes[:, 2] = bboxes[:, 2] / args.input_h * height
+            bboxes[:, 3] = bboxes[:, 3] / args.input_w * width
+
+            fp, tp, all_scores, npos = eval_parts.bbox_evaluation(index=index,
+                                                                  dsets=dsets,
+                                                                  BB_bboxes=bboxes,
+                                                                  all_scores=all_scores,
+                                                                  npos=npos,
+                                                                  ov_thresh=ov_thresh)
+            all_fp.extend(fp)
+            all_tp.extend(tp)
+        # step5: compute precision recall
+        all_fp = np.asarray(all_fp)
+        all_tp = np.asarray(all_tp)
+        all_scores = np.asarray(all_scores)
+        sorted_ind = np.argsort(-all_scores)
+        all_fp = all_fp[sorted_ind]
+        all_tp = all_tp[sorted_ind]
+        all_fp = np.cumsum(all_fp)
+        all_tp = np.cumsum(all_tp)
+        rec = all_tp / float(npos)
+        # avoid divide by zero in case the first detection matches a difficult
+        # ground truth
+        prec = all_tp / np.maximum(all_tp + all_fp, np.finfo(np.float64).eps)
+        ap = eval_parts.voc_ap(rec, prec, use_07_metric=use_07_metric)
+        print("ap@{} is {}".format(ov_thresh, ap))
+        return ap
+
+
+
+def run_seg_ap(object_is, args):
+    print('evaluating segmentation using PASCAL2010 metric')
+    thresh = np.linspace(0.5, 0.95, 10)
+    ap_list = []
+    iou_list = []
+    for v in thresh:
+        ap, iou = object_is.instance_segmentation_evaluation(args, ov_thresh=v, use_07_metric=False)
+        ap_list.append(ap*100)
+        iou_list.append(iou*100)
+    np.savetxt(os.path.join('weights_'+args.dataset, 'seg_ap_list.txt'), ap_list, fmt='%.4f')
+    np.savetxt(os.path.join('weights_'+args.dataset, 'seg_iou_list.txt'), iou_list, fmt='%.4f')
+
+
+
+def run_dec_ap(object_is, args):
+    print('evaluating detection using PASCAL2010 metric')
+    thresh = np.linspace(0.5, 0.95, 10)
+    ap_list = []
+    for v in thresh:
+        ap = object_is.detection_evaluation(args, ov_thresh=v, use_07_metric=False)
+        ap_list.append(ap*100)
+    np.savetxt(os.path.join('weights_'+args.dataset, 'dec_ap_list.txt'), ap_list, fmt='%.4f')
 
 if __name__ == '__main__':
     args = parse_args()
     object_is = InstanceHeat()
-    object_is.instance_segmentation_evaluation(args, ov_thresh=0.5)
-    object_is.instance_segmentation_evaluation(args, ov_thresh=0.7)
+    if args.eval_type == 'seg':
+        run_seg_ap(object_is, args)
+    else:
+        run_dec_ap(object_is, args)
