@@ -4,7 +4,7 @@ Multi-scale Cell Instance Segmentation with Keypoint Graph based Bounding Boxes 
 Please cite the article in your publications if it helps your research:
 
 	@inproceedings{YI2019MICCAI,
-		author = "Jingru Yi and Pengxiang Wu and Qiaoying Huang and Hui Qu and Bo Liu and Daniel J. Hoeppner and Dimitris N. Metaxas"
+		author = "Jingru Yi and Pengxiang Wu and Qiaoying Huang and Hui Qu and Bo Liu and Daniel J. Hoeppner and Dimitris N. Metaxas",
 		title = "Multi-scale Cell Instance Segmentation with Keypoint Graph based Bounding Boxes",
 		booktitle = "MICCAI",
 		year = "2019",
