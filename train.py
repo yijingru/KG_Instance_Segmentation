@@ -124,7 +124,7 @@ class InstanceHeat(object):
             val_loss_dict.append(val_epoch_loss)
 
             np.savetxt('train_loss_{}.txt'.format(args.dataset), train_loss_dict, fmt='%.6f')
-            np.savetxt('train_loss_{}.txt'.format(args.dataset), val_loss_dict, fmt='%.6f')
+            np.savetxt('val_loss_{}.txt'.format(args.dataset), val_loss_dict, fmt='%.6f')
 
             if epoch % 5 == 0 and epoch >0:
                 torch.save(self.model.state_dict(), os.path.join(weights_path, '{:d}_{:.4f}_model.pth'.format(epoch, train_epoch_loss)))
