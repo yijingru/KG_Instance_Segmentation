@@ -115,10 +115,10 @@ class InstanceHeat(object):
         for epoch in range(args.start_epoch, args.epochs):
             print('Epoch {}/{}'.format(epoch, args.epochs - 1))
             print('-' * 10)
-            scheduler.step()
 
             train_epoch_loss = self.training(train_loader,loss_dec,loss_seg,optimizer,epoch, dsets['train'])
             train_loss_dict.append(train_epoch_loss)
+            scheduler.step(epoch)
 
             val_epoch_loss = self.validating(val_loader,loss_dec,loss_seg, epoch, dsets['val'])
             val_loss_dict.append(val_epoch_loss)
