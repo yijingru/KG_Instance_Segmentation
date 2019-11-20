@@ -3,15 +3,13 @@ Multi-scale Cell Instance Segmentation with Keypoint Graph based Bounding Boxes 
 
 Please cite the article in your publications if it helps your research:
 
-	@InProceedings{10.1007/978-3-030-32239-7_41,
-		author="Yi, Jingru and Wu, Pengxiang and Huang, Qiaoying and Qu, Hui and Liu, Bo and Hoeppner, Daniel J. and Metaxas, Dimitris N.",
-		title="Multi-scale Cell Instance Segmentation with Keypoint Graph Based Bounding Boxes",
-		booktitle="Medical Image Computing and Computer Assisted Intervention -- MICCAI 2019",
-		year="2019",
-		publisher="Springer International Publishing",
-		address="Cham",
-		pages="369--377",
-		isbn="978-3-030-32239-7"
+	@inproceedings{yi2019multi,
+		  title={Multi-scale Cell Instance Segmentation with Keypoint Graph Based Bounding Boxes},
+		  author={Yi, Jingru and Wu, Pengxiang and Huang, Qiaoying and Qu, Hui and Liu, Bo and Hoeppner, Daniel J and Metaxas, Dimitris N},
+		  booktitle={International Conference on Medical Image Computing and Computer-Assisted Intervention},
+		  pages={369--377},
+		  year={2019},
+		  organization={Springer}
 	}
 
 
