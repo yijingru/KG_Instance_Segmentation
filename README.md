@@ -12,7 +12,7 @@ Please cite the article in your publications if it helps your research:
 		address="Cham",
 		pages="369--377",
 		isbn="978-3-030-32239-7"
-}
+	}
 
 
 # Introduction
